@@ -19,7 +19,8 @@ pipeline {
             agent {
                 docker {
                     image 'maven:3.9.9-eclipse-temurin-17'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock'
+                    // ✅ Mount the Jenkins workspace into the Maven container
+                    args '-v $PWD:/workspace -w /workspace'
                 }
             }
             steps {
@@ -105,3 +106,4 @@ EOF
     }
 }
 
+              
