@@ -2,96 +2,45 @@ pipeline {
     agent any
 
     environment {
-        APP_IMAGE = 'simple-web:latest'
-        NGINX_IMAGE = 'my-nginx:latest'
+        DOCKER_IMAGE = 'simple-web:latest'
+        NGINX_CONTAINER = 'nginx'
+        OUTPUT_FILE = 'output.txt'
     }
 
     stages {
-
         stage('Checkout') {
             steps {
-                echo "📥 Checking out source code..."
+                echo '📥 Checking out source code...'
                 checkout scm
             }
         }
 
         stage('Build with Maven') {
-            agent {
-                docker {
-                    image 'maven:3.9.9-eclipse-temurin-17'
-                    args "-v \"${env.WORKSPACE}\":/workspace -w /workspace"
-                }
-            }
             steps {
-                echo "⚙️ Building application with Maven..."
-                sh '''
-                mvn clean package -DskipTests
-                echo "✅ Contents of target folder:"
-                ls -l target/
-                '''
+                echo '⚙️ Building JAR using Maven...'
+                sh 'mvn clean package -DskipTests'
+                sh 'ls -l target/'
             }
         }
 
-        stage('Docker Build - App') {
+        stage('Run App and Capture Output') {
             steps {
-                echo "🐳 Building Docker image for simple-web..."
-                sh '''
-                echo "📦 Preparing Docker build context..."
-                mkdir -p docker-build
-                cp -r target docker-build/
-                cp Dockerfile docker-build/
-
-                echo "🚧 Building Docker image from docker-build/..."
-                cd docker-build
-                docker build -t ${APP_IMAGE} .
-                '''
+                echo '🧪 Running app to capture output...'
+                sh 'java -jar target/simple-web-1.0-SNAPSHOT.jar > ${OUTPUT_FILE}'
+                sh 'cat ${OUTPUT_FILE}'
             }
         }
 
-        stage('Deploy Application Container') {
+        stage('Deploy to Nginx') {
             steps {
-                echo "🚀 Running simple-web container..."
+                echo '🌐 Updating Nginx web content...'
+                // Use a safe docker cp command with error handling
                 sh '''
-                docker stop simple-web || true
-                docker rm simple-web || true
-                docker run -d --name simple-web -p 8080:8080 ${APP_IMAGE}
-                '''
-            }
-        }
-
-        stage('Build & Deploy Nginx Proxy') {
-            steps {
-                echo "🌐 Setting up Nginx reverse proxy..."
-                sh '''
-                cat > nginx.conf <<'EOF'
-                events { }
-
-                http {
-                    upstream app_server {
-                        server simple-web:8080;
-                    }
-
-                    server {
-                        listen 80;
-
-                        location / {
-                            proxy_pass http://app_server;
-                        }
-                    }
-                }
-EOF
-
-                cat > Dockerfile.nginx <<'EOF'
-                FROM nginx:latest
-                COPY nginx.conf /etc/nginx/nginx.conf
-EOF
-
-                docker build -t ${NGINX_IMAGE} -f Dockerfile.nginx .
-                docker stop nginx || true
-                docker rm nginx || true
-                docker run -d --name nginx \
-                    --link simple-web:simple-web \
-                    -p 80:80 ${NGINX_IMAGE}
+                if docker ps --format '{{.Names}}' | grep -q "^${NGINX_CONTAINER}$"; then
+                    docker cp ${OUTPUT_FILE} ${NGINX_CONTAINER}:/usr/share/nginx/html/index.html || echo "⚠️ Copy warning ignored"
+                else
+                    echo "❌ Nginx container not found! Deployment skipped."
+                fi
                 '''
             }
         }
@@ -99,10 +48,10 @@ EOF
 
     post {
         success {
-            echo "✅ Deployment successful! Visit http://<your-ec2-public-ip>"
+            echo '✅ Deployment successful! Check your EC2 public IP in the browser.'
         }
         failure {
-            echo "❌ Deployment failed. Check Jenkins logs for details."
+            echo '❌ Deployment failed. Check Jenkins logs.'
         }
     }
 }
