@@ -4,7 +4,6 @@ pipeline {
     environment {
         APP_IMAGE = 'simple-web:latest'
         NGINX_IMAGE = 'my-nginx:latest'
-        WORKDIR = "${env.WORKSPACE}"  // <-- absolute path inside Jenkins container
     }
 
     stages {
@@ -20,14 +19,14 @@ pipeline {
             agent {
                 docker {
                     image 'maven:3.9.9-eclipse-temurin-17'
-                    args "-v ${env.WORKSPACE}:${env.WORKSPACE} -w ${env.WORKSPACE}"
+                    args "-v \"${env.WORKSPACE}\":/workspace -w /workspace"
                 }
             }
             steps {
-                echo "⚙️ Building application with Maven inside Docker..."
+                echo "⚙️ Building application with Maven..."
                 sh '''
                 mvn clean package -DskipTests
-                echo "Contents of target folder:"
+                echo "✅ Contents of target folder:"
                 ls -l target/
                 '''
             }
@@ -37,8 +36,14 @@ pipeline {
             steps {
                 echo "🐳 Building Docker image for simple-web..."
                 sh '''
-                echo "Building image using JAR at: ${WORKDIR}/target/simple-web-1.0-SNAPSHOT.jar"
-                docker build -t ${APP_IMAGE} -f Dockerfile ${WORKDIR}
+                echo "📦 Preparing Docker build context..."
+                mkdir -p docker-build
+                cp -r target docker-build/
+                cp Dockerfile docker-build/
+
+                echo "🚧 Building Docker image from docker-build/..."
+                cd docker-build
+                docker build -t ${APP_IMAGE} .
                 '''
             }
         }
@@ -56,36 +61,30 @@ pipeline {
 
         stage('Build & Deploy Nginx Proxy') {
             steps {
-                echo "🌐 Building and running Nginx reverse proxy..."
+                echo "🌐 Setting up Nginx reverse proxy..."
                 sh '''
-                # Create nginx.conf if not exists
-                if [ ! -f nginx.conf ]; then
-                    cat <<'EOF' > nginx.conf
-                    events { }
+                cat > nginx.conf <<'EOF'
+                events { }
 
-                    http {
-                        upstream app_server {
-                            server simple-web:8080;
-                        }
+                http {
+                    upstream app_server {
+                        server simple-web:8080;
+                    }
 
-                        server {
-                            listen 80;
+                    server {
+                        listen 80;
 
-                            location / {
-                                proxy_pass http://app_server;
-                            }
+                        location / {
+                            proxy_pass http://app_server;
                         }
                     }
+                }
 EOF
-                fi
 
-                # Create Dockerfile.nginx if not exists
-                if [ ! -f Dockerfile.nginx ]; then
-                    cat <<'EOF' > Dockerfile.nginx
-                    FROM nginx:latest
-                    COPY nginx.conf /etc/nginx/nginx.conf
+                cat > Dockerfile.nginx <<'EOF'
+                FROM nginx:latest
+                COPY nginx.conf /etc/nginx/nginx.conf
 EOF
-                fi
 
                 docker build -t ${NGINX_IMAGE} -f Dockerfile.nginx .
                 docker stop nginx || true
@@ -100,7 +99,7 @@ EOF
 
     post {
         success {
-            echo "✅ Deployment successful! Visit your EC2 public IP in the browser."
+            echo "✅ Deployment successful! Visit http://<your-ec2-public-ip>"
         }
         failure {
             echo "❌ Deployment failed. Check Jenkins logs for details."
