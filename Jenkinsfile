@@ -30,8 +30,14 @@ pipeline {
         stage('Run App and Capture Output') {
             steps {
                 echo '🧪 Running app to capture output...'
-                sh 'java -jar target/simple-web-1.0-SNAPSHOT.jar > ${OUTPUT_FILE}'
+                sh '''
+                java -jar target/simple-web-1.0-SNAPSHOT.jar > ${OUTPUT_FILE}
+                echo "" >> ${OUTPUT_FILE}
+                echo "✅ Deployed by Jenkins Build #${BUILD_NUMBER} on $(date -u)" >> ${OUTPUT_FILE}
+                '''
                 sh 'cat ${OUTPUT_FILE}'
+           
+               
             }
         }
 
