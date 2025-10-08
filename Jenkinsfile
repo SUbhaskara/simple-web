@@ -15,10 +15,14 @@ pipeline {
             }
         }
 
-        stage('Build with Maven') {
+        stage('Build with Maven (Dockerized)') {
             steps {
-                echo '⚙️ Building JAR using Maven...'
-                sh 'mvn clean package -DskipTests'
+                echo '⚙️ Building JAR inside Maven container...'
+                script {
+                    docker.image('maven:3.9.9-eclipse-temurin-17').inside('-v $PWD:/app -w /app') {
+                        sh 'mvn clean package -DskipTests'
+                    }
+                }
                 sh 'ls -l target/'
             }
         }
@@ -34,7 +38,6 @@ pipeline {
         stage('Deploy to Nginx') {
             steps {
                 echo '🌐 Updating Nginx web content...'
-                // Use a safe docker cp command with error handling
                 sh '''
                 if docker ps --format '{{.Names}}' | grep -q "^${NGINX_CONTAINER}$"; then
                     docker cp ${OUTPUT_FILE} ${NGINX_CONTAINER}:/usr/share/nginx/html/index.html || echo "⚠️ Copy warning ignored"
@@ -55,4 +58,3 @@ pipeline {
         }
     }
 }
-
