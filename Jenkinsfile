@@ -4,6 +4,7 @@ pipeline {
     environment {
         APP_IMAGE = 'simple-web:latest'
         NGINX_IMAGE = 'my-nginx:latest'
+        WORKDIR = "${env.WORKSPACE}"  // <-- absolute path inside Jenkins container
     }
 
     stages {
@@ -19,14 +20,14 @@ pipeline {
             agent {
                 docker {
                     image 'maven:3.9.9-eclipse-temurin-17'
-                    // ✅ Mount the Jenkins workspace into the Maven container
-                    args '-v $PWD:/workspace -w /workspace'
+                    args "-v ${env.WORKSPACE}:${env.WORKSPACE} -w ${env.WORKSPACE}"
                 }
             }
             steps {
                 echo "⚙️ Building application with Maven inside Docker..."
                 sh '''
                 mvn clean package -DskipTests
+                echo "Contents of target folder:"
                 ls -l target/
                 '''
             }
@@ -36,7 +37,8 @@ pipeline {
             steps {
                 echo "🐳 Building Docker image for simple-web..."
                 sh '''
-                docker build -t ${APP_IMAGE} .
+                echo "Building image using JAR at: ${WORKDIR}/target/simple-web-1.0-SNAPSHOT.jar"
+                docker build -t ${APP_IMAGE} -f Dockerfile ${WORKDIR}
                 '''
             }
         }
@@ -98,7 +100,7 @@ EOF
 
     post {
         success {
-            echo "✅ Deployment successful!"
+            echo "✅ Deployment successful! Visit your EC2 public IP in the browser."
         }
         failure {
             echo "❌ Deployment failed. Check Jenkins logs for details."
@@ -106,4 +108,3 @@ EOF
     }
 }
 
-              
